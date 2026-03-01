@@ -17,8 +17,8 @@
 /// The nickname from initialize becomes Author("<nickname>@systemic.engineering")
 /// on every Fragment in the session. Identity is a protocol requirement.
 import fragmentation
-import ghall/json
-import ghall/session
+import gall/json
+import gall/session
 import gleam/dynamic
 import gleam/int
 import gleam/list
@@ -77,11 +77,11 @@ fn handle_initialize(
   let client_version = extract_nested(json, "clientInfo", "version")
   let protocol_version = extract_field(json, "protocolVersion")
   let author = nickname <> "@systemic.engineering"
-  let config = session.SessionConfig(author: author, name: "ghall-session")
+  let config = session.SessionConfig(author: author, name: "gall-session")
   let s = session.new(config)
 
   // Record session provenance as a @meta Fragment — written to store immediately.
-  // Everything ghall knows at the moment the agent connected.
+  // Everything gall knows at the moment the agent connected.
   let meta = meta_fragment(author, client_version, protocol_version)
 
   let response =
@@ -89,7 +89,7 @@ fn handle_initialize(
       id,
       "{\"protocolVersion\":\"2024-11-05\","
         <> "\"capabilities\":{\"tools\":{}},"
-        <> "\"serverInfo\":{\"name\":\"ghall\",\"version\":\"0.1.0\"}}",
+        <> "\"serverInfo\":{\"name\":\"gall\",\"version\":\"0.1.0\"}}",
     )
 
   case state {
@@ -109,7 +109,7 @@ fn meta_fragment(
   let w =
     fragmentation.witnessed(
       fragmentation.Author(author),
-      fragmentation.Committer("ghall"),
+      fragmentation.Committer("gall"),
       fragmentation.Timestamp("0"),
       fragmentation.Message("@meta"),
     )
@@ -200,7 +200,7 @@ fn tool_decide(
     Error(Nil) -> #(s, err_json("decide requires rule"), None)
     Ok(rule) -> {
       // obs_sha: defaults to HEAD — the most recent Fragment in the session.
-      // The agent doesn't need to know where they are; ghall does.
+      // The agent doesn't need to know where they are; gall does.
       let obs_sha = case json.get_string(args, "obs_sha") {
         Ok(sha) if sha != "" -> sha
         _ -> session.head(s)

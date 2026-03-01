@@ -21,9 +21,9 @@
 /// That's what makes it witnessing, not logging.
 import fragmentation
 import fragmentation/walk
-import ghall/mcp
-import ghall/session
-import ghall/store
+import gall/mcp
+import gall/session
+import gall/store
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -47,37 +47,37 @@ pub type Event {
   Killed
 }
 
-@external(erlang, "ghall_ffi", "session_id")
+@external(erlang, "gall_ffi", "session_id")
 fn session_id() -> String
 
-@external(erlang, "ghall_ffi", "setup_signal_handlers")
+@external(erlang, "gall_ffi", "setup_signal_handlers")
 fn setup_signal_handlers() -> Nil
 
-@external(erlang, "ghall_ffi", "start_unix_socket")
+@external(erlang, "gall_ffi", "start_unix_socket")
 fn start_unix_socket(path: String) -> Result(McpSocket, String)
 
-@external(erlang, "ghall_ffi", "accept_client")
+@external(erlang, "gall_ffi", "accept_client")
 fn accept_client(listen_sock: McpSocket) -> Result(McpSocket, String)
 
-@external(erlang, "ghall_ffi", "set_active")
+@external(erlang, "gall_ffi", "set_active")
 fn set_active(sock: McpSocket) -> Nil
 
-@external(erlang, "ghall_ffi", "send_socket")
+@external(erlang, "gall_ffi", "send_socket")
 fn send_socket(sock: McpSocket, data: String) -> Nil
 
-@external(erlang, "ghall_ffi", "spawn_claude")
+@external(erlang, "gall_ffi", "spawn_claude")
 fn spawn_claude(exe: String, args: List(String)) -> ClaudePort
 
-@external(erlang, "ghall_ffi", "receive_event")
+@external(erlang, "gall_ffi", "receive_event")
 fn receive_event(port: ClaudePort, sock: McpSocket) -> Event
 
-@external(erlang, "ghall_ffi", "now")
+@external(erlang, "gall_ffi", "now")
 fn now() -> Int
 
-@external(erlang, "ghall_ffi", "git_ensure_repo")
+@external(erlang, "gall_ffi", "git_ensure_repo")
 fn git_ensure_repo(repo_dir: String) -> Nil
 
-@external(erlang, "ghall_ffi", "git_commit_session")
+@external(erlang, "gall_ffi", "git_commit_session")
 fn git_commit_session(
   repo_dir: String,
   rel_path: String,
@@ -166,7 +166,7 @@ pub fn run(config: RunConfig) -> Nil {
   let #(final_mcp_state, exit_code) =
     event_loop(mcp_state, port, conn_sock, store_dir, [])
 
-  // If ghall was killed by a signal, record it before doing anything else.
+  // If gall was killed by a signal, record it before doing anything else.
   // exit_code -2 = killed. Write @killed to store so it travels into .gestalt.
   case exit_code == -2 {
     True -> {
@@ -313,7 +313,7 @@ fn thought_shard(chunk: String, mcp_state: mcp.State) -> fragmentation.Fragment 
   fragmentation.shard(r, w, chunk)
 }
 
-/// Record that ghall itself was killed by an OS signal.
+/// Record that gall itself was killed by an OS signal.
 /// The session was running. Someone or something sent SIGTERM/SIGHUP.
 /// Written to store so it travels into .gestalt regardless of session state.
 fn killed_shard(mcp_state: mcp.State) -> fragmentation.Fragment {
@@ -328,12 +328,12 @@ fn killed_shard(mcp_state: mcp.State) -> fragmentation.Fragment {
   let w =
     fragmentation.witnessed(
       fragmentation.Author(author),
-      fragmentation.Committer("ghall"),
+      fragmentation.Committer("gall"),
       fragmentation.Timestamp(ts),
       fragmentation.Message("@killed"),
     )
   let r = fragmentation.ref(fragmentation.hash(ts <> "@killed"), "killed")
-  fragmentation.shard(r, w, "@killed: ghall received SIGTERM or SIGHUP")
+  fragmentation.shard(r, w, "@killed: gall received SIGTERM or SIGHUP")
 }
 
 /// Build a full @violation Fragment.

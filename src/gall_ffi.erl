@@ -1,4 +1,4 @@
--module(ghall_ffi).
+-module(gall_ffi).
 -export([
     now/0,
     keygen/1,
@@ -168,16 +168,18 @@ receive_event(Port, Sock) ->
 %% Git persistence (.gall/gestalt)
 %% ---------------------------------------------------------------------------
 
-%% Alex's ed25519 public key (32 raw bytes, no SSH header).
-%% Shipped as the root of trust. Agent keys are derived from this.
-%% TODO: replace placeholder with actual alex@systemic.engineering pubkey.
-alex_root_pubkey() ->
-    %% <<0:256>>.  %% placeholder — replace with real 32-byte pubkey
-    base64:decode(<<"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=">>).
+%% Reed's ed25519 public key (32 raw bytes, no SSH header).
+%% github.com/systemic-engineer — the root of trust for agent key derivation.
+%% Shipped with gall. Anyone can re-derive and verify.
+reed_root_pubkey() ->
+    <<16#27, 16#ea, 16#cd, 16#f9, 16#32, 16#30, 16#e3, 16#66,
+      16#ed, 16#bb, 16#1d, 16#6f, 16#01, 16#8b, 16#9a, 16#cc,
+      16#8f, 16#4b, 16#9c, 16#a6, 16#2a, 16#b1, 16#a8, 16#12,
+      16#21, 16#96, 16#da, 16#18, 16#d4, 16#2d, 16#fa, 16#18>>.
 
 %% Derive an ed25519 agent keypair from Alex's public key + nickname.
 %%
-%% seed = HMAC-SHA256(key=alex_pubkey, "ghall:" || nickname)
+%% seed = HMAC-SHA256(key=alex_pubkey, "gall:" || nickname)
 %% {PubKey, PrivKey} = ed25519(seed)
 %%
 %% Deterministic: same alex pubkey + same nickname → same keypair every time.
@@ -185,10 +187,11 @@ alex_root_pubkey() ->
 %%
 %% Security model: provenance, not secrecy.
 %% The key is not secret — the derivation formula is public.
-%% What it proves: this tag was produced by ghall using alex's root key.
+%% What it proves: this tag was produced by gall using alex's root key.
 derive_agent_keypair(Nickname) ->
-    AlexPub = alex_root_pubkey(),
-    Seed    = crypto:mac(hmac, sha256, AlexPub, <<"ghall:", Nickname/binary>>),
+    ReedPub  = reed_root_pubkey(),
+    Identity = <<Nickname/binary, "@systemic.engineering">>,
+    Seed     = crypto:mac(hmac, sha256, ReedPub, Identity),
     crypto:generate_key(eddsa, ed25519, Seed).
 
 %% Format an ed25519 keypair as an OpenSSH private key file (unencrypted).
@@ -254,7 +257,7 @@ git_ensure_repo(RepoDir) ->
 %%
 %% Tag:     gestalt/<Nickname>/<SessionId>
 %% Message: gestalt: <Nickname>/<SessionId>: <RootSha>
-%%          key: ssh-ed25519 <base64> ghall/<Nickname>
+%%          key: ssh-ed25519 <base64> gall/<Nickname>
 %%
 %% When AlexKey is set (alex's private key path), the attestation footer
 %% is appended and the tag is signed with alex's key directly:
@@ -274,15 +277,16 @@ git_commit_session(RepoDir, RelPath, Nickname, SessionId, RootSha, AlexKey) ->
     TagName = "gestalt/" ++ NickStr ++ "/" ++ SidStr,
     %% Derive agent keypair and write to temp file for this session.
     {PubKey, PrivKey} = derive_agent_keypair(Nickname),
-    KeyComment = "ghall/" ++ NickStr,
-    KeyFile    = PathStr ++ "/.git/GHALL_AGENT_KEY",
+    KeyComment = "gall/" ++ NickStr,
+    KeyFile    = PathStr ++ "/.git/GALL_AGENT_KEY",
     {Pem, PubLine} = openssh_ed25519(PubKey, PrivKey, KeyComment),
     ok = file:write_file(KeyFile, Pem),
     ok = file:change_mode(KeyFile, 8#600),
     %% allowed_signers for this session: the derived key.
-    AllowedSig = PathStr ++ "/.git/GHALL_ALLOWED",
+    AgentEmail = <<Nickname/binary, "@systemic.engineering">>,
+    AllowedSig = PathStr ++ "/.git/GALL_ALLOWED",
     ok = file:write_file(AllowedSig,
-        <<"ghall@systemic.engineering ", PubLine/binary>>),
+        <<AgentEmail/binary, " ", PubLine/binary>>),
     %% Build tag message.
     PubLineTrimmed = binary:part(PubLine, 0, byte_size(PubLine) - 1),
     KeyLine = <<"key: ", PubLineTrimmed/binary>>,
@@ -299,18 +303,19 @@ git_commit_session(RepoDir, RelPath, Nickname, SessionId, RootSha, AlexKey) ->
                                         KeyLine/binary, Footer]),
             {binary_to_list(AlexKey), BaseMsg}
     end,
-    CommitMsgFile = PathStr ++ "/.git/GHALL_COMMIT_MSG",
-    TagMsgFile    = PathStr ++ "/.git/GHALL_TAG_MSG",
+    CommitMsgFile = PathStr ++ "/.git/GALL_COMMIT_MSG",
+    TagMsgFile    = PathStr ++ "/.git/GALL_TAG_MSG",
     ok = file:write_file(CommitMsgFile, TagMsg),
     ok = file:write_file(TagMsgFile, TagMsg),
+    AgentEmailStr = NickStr ++ "@systemic.engineering",
     os:cmd("git -C " ++ PathStr ++ " add -- " ++ RelStr),
     os:cmd("git -C " ++ PathStr
-           ++ " -c user.name=ghall"
-           ++ " -c user.email=ghall@systemic.engineering"
+           ++ " -c user.name=" ++ NickStr
+           ++ " -c user.email=" ++ AgentEmailStr
            ++ " commit -F " ++ CommitMsgFile),
     os:cmd("git -C " ++ PathStr
-           ++ " -c user.name=ghall"
-           ++ " -c user.email=ghall@systemic.engineering"
+           ++ " -c user.name=" ++ NickStr
+           ++ " -c user.email=" ++ AgentEmailStr
            ++ " -c gpg.format=ssh"
            ++ " -c user.signingKey=" ++ binary_to_list(list_to_binary(SigningKey))
            ++ " -c gpg.ssh.allowedSignersFile=" ++ AllowedSig
