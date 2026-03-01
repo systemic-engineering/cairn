@@ -225,7 +225,8 @@ fn handle_initialize(
   let s = session.new(session_config)
   let sid = session_id()
   let branch = normalize_branch(git_current_branch(state.work_dir))
-  let session_rel = "sessions/" <> branch <> "/" <> nickname <> "/" <> sid
+  let session_rel =
+    "actors/" <> nickname <> "/worktrees/" <> branch <> "/" <> sid
   let tag_name = "gall/" <> branch <> "/" <> nickname <> "/" <> sid
   let base = state.work_dir <> "/.gall/" <> session_rel
   let store_dir = base <> "/store"

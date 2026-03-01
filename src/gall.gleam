@@ -140,7 +140,8 @@ pub fn run(config: RunConfig) -> Nil {
   let sid = session_id()
   let gall_dir = config.work_dir <> "/.gall"
   let branch = normalize_branch(git_current_branch(config.work_dir))
-  let session_rel = "sessions/" <> branch <> "/" <> config.nickname <> "/" <> sid
+  let session_rel =
+    "actors/" <> config.nickname <> "/worktrees/" <> branch <> "/" <> sid
   let tag_name = "gall/" <> branch <> "/" <> config.nickname <> "/" <> sid
   let base = gall_dir <> "/" <> session_rel
   let store_dir = base <> "/store"
