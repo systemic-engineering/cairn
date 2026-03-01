@@ -147,8 +147,10 @@ pub fn run(config: RunConfig) -> Nil {
           // TODO: git commit to .mara/gestalt
         }
         Error(reason) -> {
-          // Tamper detected — write the incident record
-          write_exit_record(base, exit_code, "tampered: " <> reason)
+          // Tamper detected — write a @violation Fragment to the store
+          let violation = violation_shard(reason, final_mcp_state)
+          let _ = store.write(violation, store_dir)
+          write_exit_record(base, exit_code, "violation: " <> reason)
         }
       }
   }
@@ -254,6 +256,31 @@ fn thought_shard(chunk: String, mcp_state: mcp.State) -> fragmentation.Fragment 
     )
   let r = fragmentation.ref(fragmentation.hash(ts <> chunk), "thought")
   fragmentation.shard(r, w, chunk)
+}
+
+/// Record a tamper detection event as a witnessed Fragment.
+/// Written to the store so it travels with the session into .mara/gestalt.
+fn violation_shard(
+  reason: String,
+  mcp_state: mcp.State,
+) -> fragmentation.Fragment {
+  let author = case mcp_state {
+    mcp.Uninitialized -> "unknown@systemic.engineering"
+    mcp.Ready(s) -> {
+      let session.SessionConfig(author: a, ..) = session.config(s)
+      a
+    }
+  }
+  let ts = int.to_string(now())
+  let w =
+    fragmentation.witnessed(
+      fragmentation.Author(author),
+      fragmentation.Committer("gall"),
+      fragmentation.Timestamp(ts),
+      fragmentation.Message("@violation"),
+    )
+  let r = fragmentation.ref(fragmentation.hash(ts <> reason), "violation")
+  fragmentation.shard(r, w, reason)
 }
 
 // ---------------------------------------------------------------------------
