@@ -148,7 +148,7 @@ pub fn run(config: RunConfig) -> Nil {
         }
         Error(reason) -> {
           // Tamper detected — write a @violation Fragment to the store
-          let violation = violation_shard(reason, final_mcp_state)
+          let violation = violation_shard(reason)
           let _ = store.write(violation, store_dir)
           write_exit_record(base, exit_code, "violation: " <> reason)
         }
@@ -260,21 +260,11 @@ fn thought_shard(chunk: String, mcp_state: mcp.State) -> fragmentation.Fragment 
 
 /// Record a tamper detection event as a witnessed Fragment.
 /// Written to the store so it travels with the session into .mara/gestalt.
-fn violation_shard(
-  reason: String,
-  mcp_state: mcp.State,
-) -> fragmentation.Fragment {
-  let author = case mcp_state {
-    mcp.Uninitialized -> "unknown@systemic.engineering"
-    mcp.Ready(s) -> {
-      let session.SessionConfig(author: a, ..) = session.config(s)
-      a
-    }
-  }
+fn violation_shard(reason: String) -> fragmentation.Fragment {
   let ts = int.to_string(now())
   let w =
     fragmentation.witnessed(
-      fragmentation.Author(author),
+      fragmentation.Author("violation@systemic.engineering"),
       fragmentation.Committer("gall"),
       fragmentation.Timestamp(ts),
       fragmentation.Message("@violation"),
