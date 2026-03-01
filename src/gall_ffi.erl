@@ -11,7 +11,6 @@
     send_socket/2,
     spawn_claude/2,
     receive_event/2,
-    git_ensure_repo/1,
     git_current_branch/1,
     git_commit_session/7,
     read_config_tag/1,
@@ -259,13 +258,6 @@ wrap64(B64, Width) ->
              || I <- lists:seq(1, Len, Width)],
     iolist_to_binary(lists:join("\n", Lines)).
 
-%% Ensure .gall/ is a git repo. Idempotent.
-git_ensure_repo(RepoDir) ->
-    PathStr = binary_to_list(RepoDir),
-    ok = filelib:ensure_dir(PathStr ++ "/"),
-    os:cmd("git -C " ++ PathStr ++ " init 2>/dev/null"),
-    ok.
-
 %% Return the current branch name (abbrev-ref HEAD).
 %% Returns "HEAD" if in detached-HEAD state.
 git_current_branch(RepoDir) ->
@@ -430,11 +422,11 @@ git_show_file(Dir, Ref, Path) ->
 %% Gestalt resources
 %% ---------------------------------------------------------------------------
 
-%% List gestalt/* tags in the gall repo, newest first.
+%% List sessions/* tags in the project repo, newest first.
 %% Returns newline-separated tag names.
-list_gestalt_sessions(GallDir) ->
-    Raw = os:cmd("git -C " ++ binary_to_list(GallDir)
-                 ++ " tag -l 'gestalt/*' --sort=-creatordate 2>/dev/null"),
+list_gestalt_sessions(WorkDir) ->
+    Raw = os:cmd("git -C " ++ binary_to_list(WorkDir)
+                 ++ " tag -l 'sessions/*' --sort=-creatordate 2>/dev/null"),
     unicode:characters_to_binary(string:trim(Raw)).
 
 %% Read the message body of a specific gestalt tag.

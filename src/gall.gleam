@@ -75,9 +75,6 @@ fn receive_event(port: ClaudePort, sock: McpSocket) -> Event
 @external(erlang, "gall_ffi", "now")
 fn now() -> Int
 
-@external(erlang, "gall_ffi", "git_ensure_repo")
-fn git_ensure_repo(repo_dir: String) -> Nil
-
 @external(erlang, "gall_ffi", "git_current_branch")
 fn git_current_branch(repo_dir: String) -> String
 
@@ -141,15 +138,15 @@ pub fn run(config: RunConfig) -> Nil {
   let _ = setup_signal_handlers()
 
   let sid = session_id()
-  let repo_dir = config.work_dir <> "/.gall"
+  let gall_dir = config.work_dir <> "/.gall"
   let branch = normalize_branch(git_current_branch(config.work_dir))
   let session_rel = "sessions/" <> branch <> "/" <> config.nickname <> "/" <> sid
-  let base = repo_dir <> "/" <> session_rel
+  let base = gall_dir <> "/" <> session_rel
   let store_dir = base <> "/store"
   let sock_path = base <> "/mcp.sock"
   let mcp_config_path = base <> "/mcp.json"
 
-  // Create store directory
+  // Create store directory (no git init — project git tracks .gall/ as plain files)
   let _ = simplifile.create_directory_all(store_dir)
 
   // Start unix socket listener
@@ -196,12 +193,13 @@ pub fn run(config: RunConfig) -> Nil {
           case store.verify(root, store_dir) {
             Ok(Nil) -> {
               write_exit_record(base, exit_code, "ok")
-              // Commit Fragment files and tag: gestalt/<nickname>/<sid>
-              git_ensure_repo(repo_dir)
+              // Commit .gall/sessions/... into the project's own git.
+              // .gall/ is plain files — no nested git repo.
+              let _ = simplifile.create_directory_all(gall_dir)
               let tag_name = session_rel
               git_commit_session(
-                repo_dir,
-                session_rel <> "/store",
+                config.work_dir,
+                ".gall/" <> session_rel <> "/store",
                 config.nickname,
                 sid,
                 tag_name,
@@ -209,9 +207,9 @@ pub fn run(config: RunConfig) -> Nil {
                 config.alex_key,
               )
               // Sync if enabled in config tag
-              let sync_cfg = gall_config.parse(read_config_tag(repo_dir))
+              let sync_cfg = gall_config.parse(read_config_tag(config.work_dir))
               case sync_cfg.sync {
-                True -> send_patch(repo_dir, sync_cfg.sync_remote)
+                True -> send_patch(config.work_dir, sync_cfg.sync_remote)
                 False -> Nil
               }
             }

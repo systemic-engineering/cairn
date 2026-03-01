@@ -14,10 +14,12 @@
 /// from the file path. Reads are witnessed, not just writes.
 ///
 /// Storage:
-///   GALL_DIR   — gestalt repo root (default: $HOME/.reed)
-///   PWD        — project working directory, used for git operations
-///   GALL_ALIAS — agent nickname extracted from initialize if not set
+///   PWD           — project working directory (work_dir for all operations)
 ///   GALL_ALEX_KEY — path to alex's signing key (optional)
+///
+/// .gall/ lives inside the project. No nested git repo.
+/// The project's own git tracks .gall/sessions/... as plain files.
+/// Session tags (sessions/<branch>/<name>/<timestamp>) live in the project git.
 ///
 /// Install:
 ///   gleam run --module gall/daemon   (from project directory)
@@ -74,9 +76,6 @@ fn list_gestalt_sessions_ffi(gall_dir: String) -> String
 @external(erlang, "gall_ffi", "read_gestalt_session")
 fn read_gestalt_session_ffi(gall_dir: String, tag: String) -> String
 
-@external(erlang, "gall_ffi", "git_ensure_repo")
-fn git_ensure_repo(repo_dir: String) -> Nil
-
 @external(erlang, "gall_ffi", "git_current_branch")
 fn git_current_branch(repo_dir: String) -> String
 
@@ -116,11 +115,11 @@ pub type SessionState {
   )
 }
 
-/// Daemon-level state. work_dir and gall_dir are set at startup and never change.
+/// Daemon-level state. work_dir is set at startup and never changes.
+/// gall_dir = work_dir <> "/.gall" — derived, not stored separately.
 pub type State {
   State(
     work_dir: String,
-    gall_dir: String,
     alex_key: String,
     sess: SessionState,
   )
@@ -132,13 +131,10 @@ pub type State {
 
 pub fn main() -> Nil {
   let work_dir = result.unwrap(get_env("PWD"), ".")
-  // Default gall_dir: $HOME/.reed (the identity repo).
-  // Override with GALL_DIR env var.
-  let home = result.unwrap(get_env("HOME"), ".")
-  let gall_dir = result.unwrap(get_env("GALL_DIR"), home <> "/.reed")
   let alex_key = result.unwrap(get_env("GALL_ALEX_KEY"), "")
-  git_ensure_repo(gall_dir)
-  let state = State(work_dir:, gall_dir:, alex_key:, sess: Idle)
+  let gall_dir = work_dir <> "/.gall"
+  let _ = simplifile.create_directory_all(gall_dir)
+  let state = State(work_dir:, alex_key:, sess: Idle)
   loop(state)
 }
 
@@ -231,7 +227,7 @@ fn handle_initialize(
   let branch = normalize_branch(git_current_branch(state.work_dir))
   let session_rel = "sessions/" <> branch <> "/" <> nickname <> "/" <> sid
   let tag_name = session_rel
-  let base = state.gall_dir <> "/" <> session_rel
+  let base = state.work_dir <> "/.gall/" <> session_rel
   let store_dir = base <> "/store"
   let _ = simplifile.create_directory_all(store_dir)
 
@@ -447,10 +443,10 @@ fn call_commit(
           )
         }
         Ok(Nil) -> {
-          git_ensure_repo(state.gall_dir)
+          // Commit .gall/sessions/... into the project's git (no nested repo).
           git_commit_session(
-            state.gall_dir,
-            sr <> "/store",
+            state.work_dir,
+            ".gall/" <> sr <> "/store",
             nick,
             sid,
             tn,
@@ -458,9 +454,9 @@ fn call_commit(
             state.alex_key,
           )
           // Sync if configured
-          let sync_cfg = gall_config.parse(read_config_tag(state.gall_dir))
+          let sync_cfg = gall_config.parse(read_config_tag(state.work_dir))
           case sync_cfg.sync {
-            True -> send_patch(state.gall_dir, sync_cfg.sync_remote)
+            True -> send_patch(state.work_dir, sync_cfg.sync_remote)
             False -> Nil
           }
 
@@ -607,7 +603,7 @@ fn handle_resources_list(
   state: State,
   id: String,
 ) -> #(State, Option(String), Option(fragmentation.Fragment)) {
-  let raw_tags = list_gestalt_sessions_ffi(state.gall_dir)
+  let raw_tags = list_gestalt_sessions_ffi(state.work_dir)
   let tags = case raw_tags {
     "" -> []
     t -> string.split(t, "\n")
@@ -616,10 +612,10 @@ fn handle_resources_list(
   let resource_items =
     list.map(tags, fn(tag) {
       let trimmed = string.trim(tag)
-      // tag = "gestalt/mara/1737000000" → uri = "gestalt://session/mara/1737000000"
-      let uri = case string.split_once(trimmed, "gestalt/") {
-        Ok(#("", rest)) -> "gestalt://session/" <> rest
-        _ -> "gestalt://session/" <> trimmed
+      // tag = "sessions/main/mara/1737000000" → uri = "sessions://main/mara/1737000000"
+      let uri = case string.split_once(trimmed, "sessions/") {
+        Ok(#("", rest)) -> "sessions://" <> rest
+        _ -> "sessions://" <> trimmed
       }
       "{\"uri\":\""
       <> json_escape(uri)
@@ -639,12 +635,12 @@ fn handle_resources_read(
   json: String,
 ) -> #(State, Option(String), Option(fragmentation.Fragment)) {
   let uri = extract_nested(json, "params", "uri")
-  let prefix = "gestalt://session/"
+  let prefix = "sessions://"
   case string.starts_with(uri, prefix) {
     True -> {
       let rest = string.drop_start(uri, string.length(prefix))
-      let tag = "gestalt/" <> rest
-      let content = read_gestalt_session_ffi(state.gall_dir, tag)
+      let tag = "sessions/" <> rest
+      let content = read_gestalt_session_ffi(state.work_dir, tag)
       let contents =
         "[{\"uri\":\""
         <> json_escape(uri)
@@ -664,9 +660,9 @@ fn handle_resources_read(
 
 fn resource_templates_json() -> String {
   "{\"resourceTemplates\":["
-  <> "{\"uriTemplate\":\"gestalt://session/{nickname}/{sid}\","
-  <> "\"name\":\"Gestalt session\","
-  <> "\"description\":\"Witnessed Fragment tree for a session.\","
+  <> "{\"uriTemplate\":\"sessions://{branch}/{nickname}/{sid}\","
+  <> "\"name\":\"Session\","
+  <> "\"description\":\"Witnessed Fragment record for a session in the .gall namespace.\","
   <> "\"mimeType\":\"text/plain\"}"
   <> "]}"
 }
