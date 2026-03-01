@@ -422,11 +422,11 @@ git_show_file(Dir, Ref, Path) ->
 %% Gestalt resources
 %% ---------------------------------------------------------------------------
 
-%% List sessions/* tags in the project repo, newest first.
+%% List gall/* tags in the project repo, newest first.
 %% Returns newline-separated tag names.
 list_gestalt_sessions(WorkDir) ->
     Raw = os:cmd("git -C " ++ binary_to_list(WorkDir)
-                 ++ " tag -l 'sessions/*' --sort=-creatordate 2>/dev/null"),
+                 ++ " tag -l 'gall/*' --sort=-creatordate 2>/dev/null"),
     unicode:characters_to_binary(string:trim(Raw)).
 
 %% Read the message body of a specific gestalt tag.

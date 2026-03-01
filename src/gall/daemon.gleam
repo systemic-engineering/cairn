@@ -226,7 +226,7 @@ fn handle_initialize(
   let sid = session_id()
   let branch = normalize_branch(git_current_branch(state.work_dir))
   let session_rel = "sessions/" <> branch <> "/" <> nickname <> "/" <> sid
-  let tag_name = session_rel
+  let tag_name = "gall/" <> branch <> "/" <> nickname <> "/" <> sid
   let base = state.work_dir <> "/.gall/" <> session_rel
   let store_dir = base <> "/store"
   let _ = simplifile.create_directory_all(store_dir)
@@ -612,10 +612,10 @@ fn handle_resources_list(
   let resource_items =
     list.map(tags, fn(tag) {
       let trimmed = string.trim(tag)
-      // tag = "sessions/main/mara/1737000000" → uri = "sessions://main/mara/1737000000"
-      let uri = case string.split_once(trimmed, "sessions/") {
-        Ok(#("", rest)) -> "sessions://" <> rest
-        _ -> "sessions://" <> trimmed
+      // tag = "gall/main/mara/1737000000" → uri = "gall://main/mara/1737000000"
+      let uri = case string.split_once(trimmed, "gall/") {
+        Ok(#("", rest)) -> "gall://" <> rest
+        _ -> "gall://" <> trimmed
       }
       "{\"uri\":\""
       <> json_escape(uri)
@@ -635,11 +635,11 @@ fn handle_resources_read(
   json: String,
 ) -> #(State, Option(String), Option(fragmentation.Fragment)) {
   let uri = extract_nested(json, "params", "uri")
-  let prefix = "sessions://"
+  let prefix = "gall://"
   case string.starts_with(uri, prefix) {
     True -> {
       let rest = string.drop_start(uri, string.length(prefix))
-      let tag = "sessions/" <> rest
+      let tag = "gall/" <> rest
       let content = read_gestalt_session_ffi(state.work_dir, tag)
       let contents =
         "[{\"uri\":\""
@@ -660,9 +660,9 @@ fn handle_resources_read(
 
 fn resource_templates_json() -> String {
   "{\"resourceTemplates\":["
-  <> "{\"uriTemplate\":\"sessions://{branch}/{nickname}/{sid}\","
+  <> "{\"uriTemplate\":\"gall://{branch}/{actor}/{ts}\","
   <> "\"name\":\"Session\","
-  <> "\"description\":\"Witnessed Fragment record for a session in the .gall namespace.\","
+  <> "\"description\":\"Witnessed Fragment record. gall://<branch>/<actor>/<ts>\","
   <> "\"mimeType\":\"text/plain\"}"
   <> "]}"
 }

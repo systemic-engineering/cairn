@@ -141,6 +141,7 @@ pub fn run(config: RunConfig) -> Nil {
   let gall_dir = config.work_dir <> "/.gall"
   let branch = normalize_branch(git_current_branch(config.work_dir))
   let session_rel = "sessions/" <> branch <> "/" <> config.nickname <> "/" <> sid
+  let tag_name = "gall/" <> branch <> "/" <> config.nickname <> "/" <> sid
   let base = gall_dir <> "/" <> session_rel
   let store_dir = base <> "/store"
   let sock_path = base <> "/mcp.sock"
@@ -196,7 +197,6 @@ pub fn run(config: RunConfig) -> Nil {
               // Commit .gall/sessions/... into the project's own git.
               // .gall/ is plain files — no nested git repo.
               let _ = simplifile.create_directory_all(gall_dir)
-              let tag_name = session_rel
               git_commit_session(
                 config.work_dir,
                 ".gall/" <> session_rel <> "/store",
