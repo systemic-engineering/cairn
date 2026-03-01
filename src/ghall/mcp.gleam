@@ -74,22 +74,54 @@ fn handle_initialize(
   json: String,
 ) -> #(State, Option(String), Option(fragmentation.Fragment)) {
   let nickname = extract_nested(json, "clientInfo", "name")
+  let client_version = extract_nested(json, "clientInfo", "version")
+  let protocol_version = extract_field(json, "protocolVersion")
   let author = nickname <> "@systemic.engineering"
-  let config = session.SessionConfig(author: author, name: "gall-session")
+  let config = session.SessionConfig(author: author, name: "ghall-session")
   let s = session.new(config)
+
+  // Record session provenance as a @meta Fragment — written to store immediately.
+  // Everything ghall knows at the moment the agent connected.
+  let meta = meta_fragment(author, client_version, protocol_version)
 
   let response =
     make_response(
       id,
       "{\"protocolVersion\":\"2024-11-05\","
         <> "\"capabilities\":{\"tools\":{}},"
-        <> "\"serverInfo\":{\"name\":\"gall\",\"version\":\"0.1.0\"}}",
+        <> "\"serverInfo\":{\"name\":\"ghall\",\"version\":\"0.1.0\"}}",
     )
 
   case state {
-    Uninitialized -> #(Ready(session: s), Some(response), None)
-    Ready(_) -> #(Ready(session: s), Some(response), None)
+    Uninitialized -> #(Ready(session: s), Some(response), Some(meta))
+    Ready(_) -> #(Ready(session: s), Some(response), Some(meta))
   }
+}
+
+fn meta_fragment(
+  author: String,
+  client_version: String,
+  protocol_version: String,
+) -> fragmentation.Fragment {
+  // Timestamp from the MCP FFI clock isn't available here (no FFI in mcp.gleam).
+  // Use "0" — the orchestrator timestamps are in the Witnessed fields of
+  // session Fragments. The meta Fragment records structural provenance, not time.
+  let w =
+    fragmentation.witnessed(
+      fragmentation.Author(author),
+      fragmentation.Committer("ghall"),
+      fragmentation.Timestamp("0"),
+      fragmentation.Message("@meta"),
+    )
+  let data =
+    "author: "
+    <> author
+    <> "\nclient_version: "
+    <> client_version
+    <> "\nprotocol_version: "
+    <> protocol_version
+  let r = fragmentation.ref(fragmentation.hash(data), "meta")
+  fragmentation.shard(r, w, data)
 }
 
 fn handle_tool_call(
@@ -167,7 +199,12 @@ fn tool_decide(
   case json.get_string(args, "rule") {
     Error(Nil) -> #(s, err_json("decide requires rule"), None)
     Ok(rule) -> {
-      let obs_sha = result.unwrap(json.get_string(args, "obs_sha"), "")
+      // obs_sha: defaults to HEAD — the most recent Fragment in the session.
+      // The agent doesn't need to know where they are; ghall does.
+      let obs_sha = case json.get_string(args, "obs_sha") {
+        Ok(sha) if sha != "" -> sha
+        _ -> session.head(s)
+      }
       let obs_ref = session.ObsRef(sha: obs_sha)
       let act_shas = result.unwrap(json.get_list(args, "acts"), [])
       let acts = shas_to_fragments(s, list.map(act_shas, session.ActRef))
@@ -402,7 +439,9 @@ fn observe_tool() -> String {
   <> "\"ref\":{\"type\":\"string\","
   <> "\"description\":\"Source coordinate. Use file:path, concept:name, section:heading, or task:label.\"},"
   <> "\"data\":{\"type\":\"string\","
-  <> "\"description\":\"What you observed.\"}},"
+  <> "\"description\":\"What you observed.\"},"
+  <> "\"decisions\":{\"type\":\"array\",\"items\":{\"type\":\"string\"},"
+  <> "\"description\":\"dec_sha values from prior decide calls to link as children.\"}},"
   <> "\"required\":[\"ref\",\"data\"]}}"
 }
 
@@ -411,23 +450,23 @@ fn decide_tool() -> String {
   <> "\"description\":\"Record a decision derived from an observation.\","
   <> "\"inputSchema\":{\"type\":\"object\","
   <> "\"properties\":{"
-  <> "\"obs_sha\":{\"type\":\"string\","
-  <> "\"description\":\"The obs_sha returned by observe.\"},"
   <> "\"rule\":{\"type\":\"string\","
-  <> "\"description\":\"Your structural conclusion.\"}},"
-  <> "\"required\":[\"obs_sha\",\"rule\"]}}"
+  <> "\"description\":\"Your structural conclusion.\"},"
+  <> "\"acts\":{\"type\":\"array\",\"items\":{\"type\":\"string\"},"
+  <> "\"description\":\"act_sha values from prior act calls to link as children.\"},"
+  <> "\"obs_sha\":{\"type\":\"string\","
+  <> "\"description\":\"Optional. The observation this decision belongs to. Defaults to HEAD.\"}},"
+  <> "\"required\":[\"rule\"]}}"
 }
 
 fn act_tool() -> String {
   "{\"name\":\"act\","
-  <> "\"description\":\"Record an action taken as a result of a decision.\","
+  <> "\"description\":\"Record an action taken.\","
   <> "\"inputSchema\":{\"type\":\"object\","
   <> "\"properties\":{"
-  <> "\"dec_sha\":{\"type\":\"string\","
-  <> "\"description\":\"The dec_sha returned by decide.\"},"
   <> "\"annotation\":{\"type\":\"string\","
   <> "\"description\":\"What you did.\"}},"
-  <> "\"required\":[\"dec_sha\",\"annotation\"]}}"
+  <> "\"required\":[\"annotation\"]}}"
 }
 
 fn commit_tool() -> String {
@@ -436,6 +475,8 @@ fn commit_tool() -> String {
   <> "\"inputSchema\":{\"type\":\"object\","
   <> "\"properties\":{"
   <> "\"name\":{\"type\":\"string\","
-  <> "\"description\":\"Session name.\"}},"
+  <> "\"description\":\"Session name.\"},"
+  <> "\"observations\":{\"type\":\"array\",\"items\":{\"type\":\"string\"},"
+  <> "\"description\":\"obs_sha values to seal as the session root's children.\"}},"
   <> "\"required\":[\"name\"]}}"
 }

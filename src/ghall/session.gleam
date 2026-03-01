@@ -49,6 +49,9 @@ pub opaque type Session {
     store: List(#(String, fragmentation.Fragment)),
     /// The last committed root, if commit was called.
     last_root: Option(#(fragmentation.Fragment, String)),
+    /// SHA of the most recently created Fragment. Used as default obs_sha
+    /// in decide when the agent doesn't supply one. Empty on new session.
+    head: String,
   )
 }
 
@@ -57,7 +60,12 @@ pub opaque type Session {
 // ---------------------------------------------------------------------------
 
 pub fn new(config: SessionConfig) -> Session {
-  Session(config: config, store: [], last_root: None)
+  Session(config: config, store: [], last_root: None, head: "")
+}
+
+/// SHA of the most recently created Fragment. Empty string on a fresh session.
+pub fn head(session: Session) -> String {
+  session.head
 }
 
 /// Get the session config (author, name).
@@ -88,7 +96,11 @@ pub fn act(session: Session, annotation: String) -> #(Session, Ref) {
     )
   let sha = fragmentation.hash_fragment(frag)
   let updated =
-    Session(..session, store: list.append(session.store, [#(sha, frag)]))
+    Session(
+      ..session,
+      store: list.append(session.store, [#(sha, frag)]),
+      head: sha,
+    )
   #(updated, ActRef(sha: sha))
 }
 
@@ -117,7 +129,11 @@ pub fn decide(
     )
   let sha = fragmentation.hash_fragment(frag)
   let updated =
-    Session(..session, store: list.append(session.store, [#(sha, frag)]))
+    Session(
+      ..session,
+      store: list.append(session.store, [#(sha, frag)]),
+      head: sha,
+    )
   #(updated, DecRef(sha: sha))
 }
 
@@ -146,7 +162,11 @@ pub fn observe(
     )
   let sha = fragmentation.hash_fragment(frag)
   let updated =
-    Session(..session, store: list.append(session.store, [#(sha, frag)]))
+    Session(
+      ..session,
+      store: list.append(session.store, [#(sha, frag)]),
+      head: sha,
+    )
   #(updated, ObsRef(sha: sha))
 }
 
@@ -170,7 +190,8 @@ pub fn commit(
       observations,
     )
   let sha = fragmentation.hash_fragment(root)
-  let updated = Session(..session, last_root: Some(#(root, sha)))
+  let updated =
+    Session(..session, last_root: Some(#(root, sha)), head: sha)
   #(updated, root, sha)
 }
 
