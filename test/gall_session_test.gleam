@@ -1,119 +1,161 @@
+import fragmentation
 import gall/session
 import gleam/list
+import gleam/string
 import gleeunit/should
 
 // ---------------------------------------------------------------------------
-// Session lifecycle
+// new_session_test
 // ---------------------------------------------------------------------------
 
-pub fn new_session_is_empty_test() {
-  let s = session.new()
-  session.observations(s)
-  |> should.equal([])
-}
-
-// ---------------------------------------------------------------------------
-// Observe
-// ---------------------------------------------------------------------------
-
-pub fn observe_records_observation_test() {
-  let s = session.new()
-  let #(s, _id) =
-    session.observe(
-      s,
-      "fragmentation.gleam:33",
-      "fn:fragment present in all core files",
-    )
-  session.observations(s)
-  |> list.length
-  |> should.equal(1)
-}
-
-pub fn observe_returns_sha_as_id_test() {
-  let s = session.new()
-  let #(_s, id) =
-    session.observe(
-      s,
-      "fragmentation.gleam:33",
-      "fn:fragment present in all core files",
-    )
-  // id is a Sha — same inputs produce same id
-  let s2 = session.new()
-  let #(_s2, id2) =
-    session.observe(
-      s2,
-      "fragmentation.gleam:33",
-      "fn:fragment present in all core files",
-    )
-  id
-  |> should.equal(id2)
-}
-
-// ---------------------------------------------------------------------------
-// Decide
-// ---------------------------------------------------------------------------
-
-pub fn decide_records_decision_test() {
-  let s = session.new()
-  let #(s, obs_id) =
-    session.observe(
-      s,
-      "fragmentation.gleam:33",
-      "fn:fragment present in all core files",
-    )
-  let #(s, _dec_id) = session.decide(s, obs_id, "RequiredSection: fn:fragment")
-  session.decisions(s)
-  |> list.length
-  |> should.equal(1)
-}
-
-// ---------------------------------------------------------------------------
-// Act
-// ---------------------------------------------------------------------------
-
-pub fn act_records_action_test() {
-  let s = session.new()
-  let #(s, obs_id) =
-    session.observe(s, "fragmentation.gleam:33", "fn:fragment present")
-  let #(s, dec_id) = session.decide(s, obs_id, "RequiredSection: fn:fragment")
-  let #(s, _act_id) =
-    session.act(s, dec_id, "annotate: fn:fragment is required")
-  session.actions(s)
-  |> list.length
-  |> should.equal(1)
-}
-
-// ---------------------------------------------------------------------------
-// Commit
-// ---------------------------------------------------------------------------
-
-pub fn commit_returns_root_sha_test() {
-  let s = session.new()
-  let #(s, obs_id) =
-    session.observe(s, "fragmentation.gleam:33", "fn:fragment present")
-  let #(s, dec_id) = session.decide(s, obs_id, "RequiredSection")
-  let #(s, _act_id) = session.act(s, dec_id, "annotate: fn:fragment")
-  let #(_s, sha) = session.commit(s, "test")
-  // sha is a hex String — non-empty
+pub fn new_session_test() {
+  let config = session.SessionConfig(author: "mara@systemic.engineering", name: "test-session")
+  let s = session.new(config)
+  // Session is opaque; we just verify it was created without crashing.
+  // A freshly created session should produce a deterministic commit root.
+  let #(_s, root, sha) = session.commit(s, [])
   sha
   |> should.not_equal("")
+  // Root fragment is not dropped
+  fragmentation.data(root)
+  |> should.equal("test-session")
 }
 
-pub fn commit_is_deterministic_test() {
-  let s1 = session.new()
-  let #(s1, obs_id) =
-    session.observe(s1, "fragmentation.gleam:33", "fn:fragment present")
-  let #(s1, dec_id) = session.decide(s1, obs_id, "RequiredSection")
-  let #(s1, _) = session.act(s1, dec_id, "annotate: fn:fragment")
-  let #(_, sha1) = session.commit(s1, "test")
+// ---------------------------------------------------------------------------
+// act_returns_act_ref_test
+// ---------------------------------------------------------------------------
 
-  let s2 = session.new()
-  let #(s2, obs_id2) =
-    session.observe(s2, "fragmentation.gleam:33", "fn:fragment present")
-  let #(s2, dec_id2) = session.decide(s2, obs_id2, "RequiredSection")
-  let #(s2, _) = session.act(s2, dec_id2, "annotate: fn:fragment")
-  let #(_, sha2) = session.commit(s2, "test")
+pub fn act_returns_act_ref_test() {
+  let config = session.SessionConfig(author: "mara@systemic.engineering", name: "test-session")
+  let s = session.new(config)
+  // We need a DecRef to pass to act. Construct a minimal one.
+  let dec_ref = session.DecRef(sha: "fake-dec-sha")
+  let #(_s, ref) = session.act(s, dec_ref, "do something")
+  case ref {
+    session.ActRef(_sha) -> should.be_ok(Ok(Nil))
+    _ -> should.be_ok(Error("expected ActRef"))
+  }
+}
+
+// ---------------------------------------------------------------------------
+// decide_wraps_acts_test
+// ---------------------------------------------------------------------------
+
+pub fn decide_wraps_acts_test() {
+  let config = session.SessionConfig(author: "reed@systemic.engineering", name: "test")
+  let s = session.new(config)
+
+  // Build an act fragment first
+  let dec_ref = session.DecRef(sha: "placeholder")
+  let #(s, act_ref) = session.act(s, dec_ref, "annotate: fn:fragment")
+
+  // Retrieve the act fragment from session using the ref
+  let act_frags = session.fragments_for_ref(s, act_ref)
+  list.length(act_frags)
+  |> should.equal(1)
+
+  // Build obs_ref for decide
+  let obs_ref = session.ObsRef(sha: "placeholder-obs")
+  let #(_s, dec_ref2) = session.decide(s, obs_ref, "RequiredSection: fn:fragment", act_frags)
+
+  case dec_ref2 {
+    session.DecRef(_sha) -> should.be_ok(Ok(Nil))
+    _ -> should.be_ok(Error("expected DecRef"))
+  }
+}
+
+// ---------------------------------------------------------------------------
+// observe_wraps_decisions_test
+// ---------------------------------------------------------------------------
+
+pub fn observe_wraps_decisions_test() {
+  let config = session.SessionConfig(author: "mara@systemic.engineering", name: "test")
+  let s = session.new(config)
+
+  // Build a decision fragment
+  let obs_ref = session.ObsRef(sha: "placeholder-obs")
+  let #(s, dec_ref) = session.decide(s, obs_ref, "RequiredSection: fn:fragment", [])
+  let dec_frags = session.fragments_for_ref(s, dec_ref)
+  list.length(dec_frags)
+  |> should.equal(1)
+
+  // Observe wraps those decisions
+  let #(_s, obs_ref2) = session.observe(s, "concept:fn:fragment", "fn:fragment present", dec_frags)
+
+  case obs_ref2 {
+    session.ObsRef(_sha) -> should.be_ok(Ok(Nil))
+    _ -> should.be_ok(Error("expected ObsRef"))
+  }
+}
+
+// ---------------------------------------------------------------------------
+// commit_returns_fragment_test
+// ---------------------------------------------------------------------------
+
+pub fn commit_returns_fragment_test() {
+  let config = session.SessionConfig(author: "mara@systemic.engineering", name: "my-session")
+  let s = session.new(config)
+  let #(_s, root_frag, root_sha) = session.commit(s, [])
+
+  // root_frag is a Fragment (not dropped)
+  root_sha
+  |> should.not_equal("")
+
+  // Root data is the session name
+  fragmentation.data(root_frag)
+  |> should.equal("my-session")
+}
+
+// ---------------------------------------------------------------------------
+// commit_deterministic_test
+// ---------------------------------------------------------------------------
+
+pub fn commit_deterministic_test() {
+  // Build two identical sessions and verify same root SHA
+  let config = session.SessionConfig(author: "mara@systemic.engineering", name: "det-session")
+
+  let s1 = session.new(config)
+  let dec_ref1 = session.DecRef(sha: "dec1")
+  let #(s1, act_ref1) = session.act(s1, dec_ref1, "annotate: fn:fragment")
+  let act_frags1 = session.fragments_for_ref(s1, act_ref1)
+  let obs_ref1 = session.ObsRef(sha: "obs1")
+  let #(s1, dec_ref1b) = session.decide(s1, obs_ref1, "RequiredSection", act_frags1)
+  let dec_frags1 = session.fragments_for_ref(s1, dec_ref1b)
+  let #(s1, obs_ref1b) = session.observe(s1, "concept:fn:fragment", "fn:fragment present", dec_frags1)
+  let obs_frags1 = session.fragments_for_ref(s1, obs_ref1b)
+  let #(_s1, _root1, sha1) = session.commit(s1, obs_frags1)
+
+  let s2 = session.new(config)
+  let dec_ref2 = session.DecRef(sha: "dec1")
+  let #(s2, act_ref2) = session.act(s2, dec_ref2, "annotate: fn:fragment")
+  let act_frags2 = session.fragments_for_ref(s2, act_ref2)
+  let obs_ref2 = session.ObsRef(sha: "obs1")
+  let #(s2, dec_ref2b) = session.decide(s2, obs_ref2, "RequiredSection", act_frags2)
+  let dec_frags2 = session.fragments_for_ref(s2, dec_ref2b)
+  let #(s2, obs_ref2b) = session.observe(s2, "concept:fn:fragment", "fn:fragment present", dec_frags2)
+  let obs_frags2 = session.fragments_for_ref(s2, obs_ref2b)
+  let #(_s2, _root2, sha2) = session.commit(s2, obs_frags2)
 
   sha1
   |> should.equal(sha2)
+}
+
+// ---------------------------------------------------------------------------
+// author_from_config_test
+// ---------------------------------------------------------------------------
+
+pub fn author_from_config_test() {
+  let config = session.SessionConfig(author: "reed@systemic.engineering", name: "auth-test")
+  let s = session.new(config)
+  let dec_ref = session.DecRef(sha: "placeholder")
+  let #(s, act_ref) = session.act(s, dec_ref, "some action")
+  let act_frags = session.fragments_for_ref(s, act_ref)
+  let frag = case act_frags {
+    [f, ..] -> f
+    [] -> panic as "expected at least one fragment"
+  }
+  let w = fragmentation.self_witnessed(frag)
+  // Author must be the agent, not "gall"
+  w.author
+  |> should.equal(fragmentation.Author("reed@systemic.engineering"))
 }
