@@ -2,6 +2,7 @@ name = "cairn"
 version = "0.1.0"
 description = "cairn — content-addressed witnessed agent work. Stones stacked to mark I was here."
 licences = ["Apache-2.0"]
+# Hex requires an SPDX identifier. The actual governing terms are in REAL_LICENSE.md.
 repository = { type = "github", user = "systemic-engineering", repo = "cairn" }
 
 [dependencies]
@@ -10,7 +11,7 @@ gleam_erlang = ">= 0.25.0 and < 2.0.0"
 thoas = ">= 0.4.0 and < 2.0.0"
 simplifile = ">= 2.0.0 and < 3.0.0"
 fragmentation = ">= 0.1.0 and < 1.0.0"
-bias = { path = "../bias" }
+bias = ">= 0.1.0 and < 1.0.0"
 
 [dev-dependencies]
 gleeunit = ">= 1.0.0 and < 2.0.0"

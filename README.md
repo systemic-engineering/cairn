@@ -42,4 +42,5 @@ import cairn/session
 
 ## Licence
 
-Apache-2.0
+`LICENSE.md` contains the Apache-2.0 licence required by Hex. The actual
+governing terms are the [Systemic Engineering License v1.0](REAL_LICENSE.md).

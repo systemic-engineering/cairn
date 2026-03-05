@@ -3,3 +3,5 @@
 /build
 erl_crash.dump
 .cairn/
+.direnv/flake-inputs/
+.direnv/flake-profile*
