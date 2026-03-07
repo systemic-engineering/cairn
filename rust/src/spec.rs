@@ -1,4 +1,8 @@
+use std::marker::PhantomData;
+
 use sha2::{Digest, Sha256};
+
+use crate::key;
 
 pub struct Spec {
     pub actor: String,
@@ -9,14 +13,29 @@ pub struct Spec {
     pub max_turns: Option<u32>,
 }
 
-pub struct Actor {
-    pub spec: Spec,
-    pub hash: String,
-    pub identity: String,
+pub struct Actor<E = String> {
+    name: String,
+    email: String,
+    keypair: key::Keypair,
+    _spec: Option<Spec>,
+    hash: Option<String>,
+    _encoding: PhantomData<E>,
 }
 
-impl From<Spec> for Actor {
-    fn from(spec: Spec) -> Self {
+impl<E> Actor<E> {
+    pub fn new(name: &str) -> Self {
+        let keypair = key::derive(name);
+        Actor {
+            name: name.to_string(),
+            email: format!("{}@systemic.engineer", name),
+            keypair,
+            _spec: None,
+            hash: None,
+            _encoding: PhantomData,
+        }
+    }
+
+    pub fn from_spec(spec: Spec) -> Self {
         let canonical = format!(
             "actor:{}\nmodel:{}\nprompt:{}\nrepo:{}\nbranch:{}\nmax_turns:{}",
             spec.actor,
@@ -29,11 +48,30 @@ impl From<Spec> for Actor {
         let mut hasher = Sha256::new();
         hasher.update(canonical.as_bytes());
         let hash = hex::encode(hasher.finalize());
-        let identity = format!("{}@systemic.engineering", spec.actor);
+        let keypair = key::derive(&spec.actor);
         Actor {
-            spec,
-            hash,
-            identity,
+            name: spec.actor.clone(),
+            email: format!("{}@systemic.engineer", spec.actor),
+            keypair,
+            _spec: Some(spec),
+            hash: Some(hash),
+            _encoding: PhantomData,
         }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn email(&self) -> &str {
+        &self.email
+    }
+
+    pub fn pubkey(&self) -> [u8; 32] {
+        self.keypair.signing_key.verifying_key().to_bytes()
+    }
+
+    pub fn hash(&self) -> Option<&str> {
+        self.hash.as_deref()
     }
 }

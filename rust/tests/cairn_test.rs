@@ -37,61 +37,62 @@ fn test_config() -> SessionConfig {
 
 #[test]
 fn spec_to_actor_deterministic() {
-    let a1: Actor = test_spec().into();
-    let a2: Actor = test_spec().into();
-    assert_eq!(a1.hash, a2.hash);
+    let a1: Actor = Actor::from_spec(test_spec());
+    let a2: Actor = Actor::from_spec(test_spec());
+    assert_eq!(a1.hash(), a2.hash());
 }
 
 #[test]
 fn spec_different_input_different_hash() {
-    let a1: Actor = test_spec().into();
+    let a1: Actor = Actor::from_spec(test_spec());
     let mut s2 = test_spec();
     s2.actor = "reed".to_string();
-    let a2: Actor = s2.into();
-    assert_ne!(a1.hash, a2.hash);
+    let a2: Actor = Actor::from_spec(s2);
+    assert_ne!(a1.hash(), a2.hash());
 }
 
 #[test]
 fn spec_identity_format() {
-    let actor: Actor = test_spec().into();
-    assert_eq!(actor.identity, "mara@systemic.engineering");
+    let actor: Actor = Actor::from_spec(test_spec());
+    assert_eq!(actor.email(), "mara@systemic.engineer");
 }
 
 #[test]
 fn spec_all_fields_contribute() {
-    let base: Actor = test_spec().into();
+    let base: Actor = Actor::from_spec(test_spec());
 
     let mut s = test_spec();
     s.model = "claude-opus-4-6".to_string();
-    let changed_model: Actor = s.into();
-    assert_ne!(base.hash, changed_model.hash);
+    let changed_model: Actor = Actor::from_spec(s);
+    assert_ne!(base.hash(), changed_model.hash());
 
     let mut s = test_spec();
     s.prompt = "different prompt".to_string();
-    let changed_prompt: Actor = s.into();
-    assert_ne!(base.hash, changed_prompt.hash);
+    let changed_prompt: Actor = Actor::from_spec(s);
+    assert_ne!(base.hash(), changed_prompt.hash());
 
     let mut s = test_spec();
     s.repo = "/other/repo".to_string();
-    let changed_repo: Actor = s.into();
-    assert_ne!(base.hash, changed_repo.hash);
+    let changed_repo: Actor = Actor::from_spec(s);
+    assert_ne!(base.hash(), changed_repo.hash());
 
     let mut s = test_spec();
     s.branch = "develop".to_string();
-    let changed_branch: Actor = s.into();
-    assert_ne!(base.hash, changed_branch.hash);
+    let changed_branch: Actor = Actor::from_spec(s);
+    assert_ne!(base.hash(), changed_branch.hash());
 
     let mut s = test_spec();
     s.max_turns = Some(10);
-    let changed_turns: Actor = s.into();
-    assert_ne!(base.hash, changed_turns.hash);
+    let changed_turns: Actor = Actor::from_spec(s);
+    assert_ne!(base.hash(), changed_turns.hash());
 }
 
 #[test]
 fn spec_hash_is_sha256() {
-    let actor: Actor = test_spec().into();
-    assert_eq!(actor.hash.len(), 64);
-    assert!(actor.hash.chars().all(|c| c.is_ascii_hexdigit()));
+    let actor: Actor = Actor::from_spec(test_spec());
+    let hash = actor.hash().unwrap();
+    assert_eq!(hash.len(), 64);
+    assert!(hash.chars().all(|c| c.is_ascii_hexdigit()));
 }
 
 // ---------------------------------------------------------------------------
@@ -332,14 +333,14 @@ fn session_last_root_after_commit() {
 
 #[test]
 fn state_empty() {
-    let actor: Actor = test_spec().into();
+    let actor: Actor = Actor::from_spec(test_spec());
     let state = State::new(actor);
     assert!(state.sessions.is_empty());
 }
 
 #[test]
 fn state_single_session() {
-    let actor: Actor = test_spec().into();
+    let actor: Actor = Actor::from_spec(test_spec());
     let mut state = State::new(actor);
     state.append("abc123".to_string(), "1740000000".to_string());
     assert_eq!(state.sessions.len(), 1);
@@ -349,7 +350,7 @@ fn state_single_session() {
 
 #[test]
 fn state_chain_links_via_hash() {
-    let actor: Actor = test_spec().into();
+    let actor: Actor = Actor::from_spec(test_spec());
     let mut state = State::new(actor);
     state.append("sha-first".to_string(), "1740000000".to_string());
     state.append("sha-second".to_string(), "1740000001".to_string());
@@ -358,7 +359,7 @@ fn state_chain_links_via_hash() {
 
 #[test]
 fn state_append_preserves_previous() {
-    let actor: Actor = test_spec().into();
+    let actor: Actor = Actor::from_spec(test_spec());
     let mut state = State::new(actor);
     state.append("sha-1".to_string(), "1".to_string());
     state.append("sha-2".to_string(), "2".to_string());
