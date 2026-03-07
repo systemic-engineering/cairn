@@ -118,17 +118,8 @@ fn session_act_creates_shard() {
     assert_eq!(frags[0].self_ref().label, "act");
 }
 
-#[test]
-fn session_act_witnessed_fields() {
-    let mut s = Session::new(test_config());
-    let r = s.act("@work scan_corpus", "scope:src/cairn.gleam");
-    let frags = s.fragments_for_ref(&r);
-    let w = frags[0].self_witnessed();
-    assert_eq!(w.author, Author("mara@systemic.engineering".into()));
-    assert_eq!(w.committer, Committer("cairn".into()));
-    assert_eq!(w.message, Message("@work scan_corpus".into()));
-    assert_eq!(w.timestamp, Timestamp("1740000000".into()));
-}
+// session_act_witnessed_fields REMOVED — self_witnessed() no longer on Fragment.
+// Witnessed lives on commits only (via write_commit), not on fragment nodes.
 
 #[test]
 fn session_act_data_preserved() {
@@ -139,7 +130,7 @@ fn session_act_data_preserved() {
 }
 
 #[test]
-fn session_decide_creates_fragment() {
+fn session_decide_creates_fractal() {
     let mut s = Session::new(test_config());
     let act_ref = s.act("@annotate fn:fragment", "target:fn:fragment");
     let act_frags: Vec<_> = s.fragments_for_ref(&act_ref).into_iter().cloned().collect();
@@ -156,7 +147,7 @@ fn session_decide_creates_fragment() {
     }
     let frags = s.fragments_for_ref(&dec_ref);
     assert_eq!(frags.len(), 1);
-    assert!(frags[0].is_fragment());
+    assert!(frags[0].is_fractal());
     assert_eq!(frags[0].self_ref().label, "dec");
 }
 
@@ -173,7 +164,7 @@ fn session_decide_wraps_acts() {
 }
 
 #[test]
-fn session_observe_creates_fragment() {
+fn session_observe_creates_fractal() {
     let mut s = Session::new(test_config());
     let obs_ref_input = Ref::Obs("placeholder-obs".to_string());
     let dec_ref = s.decide("decide: obs", &obs_ref_input, "Rule", &[]);
@@ -190,7 +181,7 @@ fn session_observe_creates_fragment() {
     }
     let frags = s.fragments_for_ref(&obs_ref);
     assert_eq!(frags.len(), 1);
-    assert!(frags[0].is_fragment());
+    assert!(frags[0].is_fractal());
     assert_eq!(frags[0].self_ref().label, "obs");
 }
 
@@ -207,20 +198,25 @@ fn session_observe_wraps_decisions() {
 }
 
 #[test]
-fn session_commit_returns_root() {
+fn session_commit_returns_root_and_witness() {
     let mut s = Session::new(test_config());
-    let (root, sha) = s.commit("commit: test-session", &[]);
+    let (root, w, sha) = s.commit("commit: test-session", &[]);
     assert!(!sha.is_empty());
-    assert!(root.is_fragment());
+    assert!(root.is_fractal());
     assert_eq!(root.self_ref().label, "root");
     assert_eq!(root.data(), "test-session");
+    // Witnessed flows out of commit — caller uses it with write_commit
+    assert_eq!(w.author, Author("mara@systemic.engineering".into()));
+    assert_eq!(w.committer, Committer("cairn".into()));
+    assert_eq!(w.timestamp, Timestamp("1740000000".into()));
+    assert_eq!(w.message, Message("commit: test-session".into()));
 }
 
 #[test]
 fn session_commit_updates_head() {
     let mut s = Session::new(test_config());
     assert_eq!(s.head(), "");
-    let (_, sha) = s.commit("commit: test-session", &[]);
+    let (_, _, sha) = s.commit("commit: test-session", &[]);
     assert_eq!(s.head(), sha);
 }
 
@@ -247,7 +243,7 @@ fn session_deterministic() {
         .into_iter()
         .cloned()
         .collect();
-    let (_, sha1) = s1.commit("commit: test-session", &obs_frags1);
+    let (_, _, sha1) = s1.commit("commit: test-session", &obs_frags1);
 
     let mut s2 = Session::new(test_config());
     let r2 = s2.act("@annotate fn:fragment", "target:fn:fragment");
@@ -270,7 +266,7 @@ fn session_deterministic() {
         .into_iter()
         .cloned()
         .collect();
-    let (_, sha2) = s2.commit("commit: test-session", &obs_frags2);
+    let (_, _, sha2) = s2.commit("commit: test-session", &obs_frags2);
 
     assert_eq!(sha1, sha2);
 }
@@ -290,7 +286,7 @@ fn session_ado_full_cascade() {
         &dec_frags,
     );
     let obs_frags: Vec<_> = s.fragments_for_ref(&obs_ref).into_iter().cloned().collect();
-    let (root, _) = s.commit("commit: test-session", &obs_frags);
+    let (root, _, _) = s.commit("commit: test-session", &obs_frags);
 
     // root -> obs -> dec -> act (depth 4)
     assert_eq!(root.children().len(), 1);
@@ -324,12 +320,12 @@ fn session_head_updates_after_each_op() {
 fn session_last_root_after_commit() {
     let mut s = Session::new(test_config());
     assert!(s.last_root().is_none());
-    let (root, sha) = s.commit("commit: test-session", &[]);
+    let (root, _, sha) = s.commit("commit: test-session", &[]);
     let lr = s.last_root().unwrap();
     assert_eq!(lr.1, sha);
     assert_eq!(
-        fragment::hash_fragment(lr.0),
-        fragment::hash_fragment(&root)
+        fragment::content_oid(lr.0),
+        fragment::content_oid(&root)
     );
 }
 
@@ -382,113 +378,96 @@ fn state_append_preserves_previous() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn store_write_creates_file() {
+fn store_write_creates_object() {
     let dir = tempfile::tempdir().unwrap();
+    let repo = git2::Repository::init(dir.path()).unwrap();
     let frag = Fragment::shard(
         FragRef::new(sha::hash("test"), "test"),
-        Witnessed::new(
-            Author("test".into()),
-            Committer("cairn".into()),
-            Timestamp("0".into()),
-            Message("test".into()),
-        ),
         "test data",
     );
-    store::write(&frag, dir.path().to_str().unwrap()).unwrap();
-    let sha = fragment::hash_fragment(&frag);
-    let path = dir.path().join(&sha);
-    assert!(path.exists());
+    let oid = store::write(&frag, &repo).unwrap();
+    assert!(repo.find_object(oid, None).is_ok());
 }
 
 #[test]
 fn store_verify_passes() {
     let dir = tempfile::tempdir().unwrap();
+    let repo = git2::Repository::init(dir.path()).unwrap();
     let frag = Fragment::shard(
         FragRef::new(sha::hash("verify-test"), "test"),
-        Witnessed::new(
-            Author("test".into()),
-            Committer("cairn".into()),
-            Timestamp("0".into()),
-            Message("test".into()),
-        ),
         "verify data",
     );
-    store::write(&frag, dir.path().to_str().unwrap()).unwrap();
-    assert!(store::verify(&frag, dir.path().to_str().unwrap()).is_ok());
+    store::write(&frag, &repo).unwrap();
+    assert!(store::verify(&frag, &repo).is_ok());
 }
 
 #[test]
 fn store_verify_missing() {
     let dir = tempfile::tempdir().unwrap();
+    let repo = git2::Repository::init(dir.path()).unwrap();
     let frag = Fragment::shard(
         FragRef::new(sha::hash("missing-test"), "test"),
-        Witnessed::new(
-            Author("test".into()),
-            Committer("cairn".into()),
-            Timestamp("0".into()),
-            Message("test".into()),
-        ),
         "missing data",
     );
     // Don't write — verify should fail
-    let result = store::verify(&frag, dir.path().to_str().unwrap());
+    let result = store::verify(&frag, &repo);
     assert!(result.is_err());
     assert!(result.unwrap_err().starts_with("missing:"));
 }
 
-#[test]
-fn store_verify_tampered() {
-    let dir = tempfile::tempdir().unwrap();
-    let frag = Fragment::shard(
-        FragRef::new(sha::hash("tamper-test"), "test"),
-        Witnessed::new(
-            Author("test".into()),
-            Committer("cairn".into()),
-            Timestamp("0".into()),
-            Message("test".into()),
-        ),
-        "original data",
-    );
-    store::write(&frag, dir.path().to_str().unwrap()).unwrap();
-    // Tamper with the file
-    let sha = fragment::hash_fragment(&frag);
-    let path = dir.path().join(&sha);
-    std::fs::write(&path, "tampered content").unwrap();
-    let result = store::verify(&frag, dir.path().to_str().unwrap());
-    assert!(result.is_err());
-    assert!(result.unwrap_err().starts_with("tampered:"));
-}
+// store_verify_tampered REMOVED — impossible with content-addressed git objects.
+// If the OID resolves, the content matches by definition.
 
 #[test]
 fn store_verify_deep_tree() {
     let dir = tempfile::tempdir().unwrap();
-    let dir_str = dir.path().to_str().unwrap();
+    let repo = git2::Repository::init(dir.path()).unwrap();
     let child = Fragment::shard(
         FragRef::new(sha::hash("child"), "act"),
-        Witnessed::new(
-            Author("test".into()),
-            Committer("cairn".into()),
-            Timestamp("0".into()),
-            Message("test".into()),
-        ),
         "child data",
     );
-    let parent = Fragment::new_fragment(
+    let parent = Fragment::fractal(
         FragRef::new(sha::hash("parent"), "root"),
-        Witnessed::new(
-            Author("test".into()),
-            Committer("cairn".into()),
-            Timestamp("0".into()),
-            Message("test".into()),
-        ),
         "parent data",
-        vec![child.clone()],
+        vec![child],
     );
-    // Write parent but not child
-    fragmentation::git::write(&parent, dir_str).unwrap();
-    let result = store::verify(&parent, dir_str);
+    // write_tree is recursive — writes all children
+    store::write(&parent, &repo).unwrap();
+    assert!(store::verify(&parent, &repo).is_ok());
+
+    // A different tree not written should fail
+    let unwritten = Fragment::fractal(
+        FragRef::new(sha::hash("unwritten"), "root"),
+        "unwritten data",
+        vec![Fragment::shard(
+            FragRef::new(sha::hash("unwritten-child"), "act"),
+            "unwritten child data",
+        )],
+    );
+    let result = store::verify(&unwritten, &repo);
     assert!(result.is_err());
     assert!(result.unwrap_err().starts_with("missing:"));
+}
+
+#[test]
+fn store_write_commit_carries_witness() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = git2::Repository::init(dir.path()).unwrap();
+    let frag = Fragment::shard(
+        FragRef::new(sha::hash("commit-test"), "act"),
+        "commit data",
+    );
+    let w = Witnessed::new(
+        Author("mara".into()),
+        Committer("cairn".into()),
+        Timestamp("1740000000".into()),
+        Message("test commit".into()),
+    );
+    let commit_oid =
+        fragmentation::git::write_commit(&repo, &frag, &w, "test commit", None).unwrap();
+    let commit = repo.find_commit(commit_oid).unwrap();
+    assert_eq!(commit.author().name(), Some("mara"));
+    assert_eq!(commit.message(), Some("test commit"));
 }
 
 // ---------------------------------------------------------------------------

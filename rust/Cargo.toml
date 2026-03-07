@@ -6,7 +6,8 @@ license = "Apache-2.0"
 description = "Content-addressed witnessed agent work"
 
 [dependencies]
-fragmentation = { path = "../../fragmentation" }
+fragmentation = { path = "../../fragmentation", features = ["git"] }
+git2 = "0.19"
 sha2 = "0.10"
 hex = "0.4"
 hmac = "0.12"
