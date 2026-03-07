@@ -6,13 +6,13 @@ pub struct SessionRecord {
     pub timestamp: String,
 }
 
-pub struct State {
-    pub actor: Actor,
+pub struct State<E = String> {
+    pub actor: Actor<E>,
     pub sessions: Vec<SessionRecord>,
 }
 
-impl State {
-    pub fn new(actor: Actor) -> Self {
+impl<E> State<E> {
+    pub fn new(actor: Actor<E>) -> Self {
         State {
             actor,
             sessions: Vec::new(),
