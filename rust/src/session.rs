@@ -21,6 +21,7 @@ impl Ref {
     }
 }
 
+#[allow(dead_code)]
 pub struct Session {
     config: SessionConfig,
     store: Vec<(String, Fragment)>,
@@ -73,11 +74,7 @@ impl Session {
         todo!()
     }
 
-    pub fn commit(
-        &mut self,
-        _annotation: &str,
-        _observations: &[Fragment],
-    ) -> (Fragment, String) {
+    pub fn commit(&mut self, _annotation: &str, _observations: &[Fragment]) -> (Fragment, String) {
         todo!()
     }
 }
