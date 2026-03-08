@@ -1,13 +1,13 @@
 ---
 slug: license
-title: The Systemic Engineering License
+title: The systemic.engineering License
 status: published
 visibility: public
 version: "1.0"
 effective_date: "2026-03-01"
 ---
 
-# The Systemic Engineering License
+# The systemic.engineering License
 
 **Version 1.0**
 **Effective Date:** 2026-03-01
@@ -284,4 +284,4 @@ Questions may be directed to me at systemic.engineering.
 
 ---
 
-*End of License — Systemic Engineering License v1.0*
+*End of License — systemic.engineering License v1.0*

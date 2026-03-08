@@ -27,8 +27,8 @@ impl Ref {
 
 pub struct Session {
     config: SessionConfig,
-    store: Vec<(String, Fragment)>,
-    last_root: Option<(Fragment, String)>,
+    store: Vec<(String, Fragment<String>)>,
+    last_root: Option<(Fragment<String>, String)>,
     head: String,
 }
 
@@ -50,11 +50,11 @@ impl Session {
         &self.config
     }
 
-    pub fn last_root(&self) -> Option<(&Fragment, &str)> {
+    pub fn last_root(&self) -> Option<(&Fragment<String>, &str)> {
         self.last_root.as_ref().map(|(f, s)| (f, s.as_str()))
     }
 
-    pub fn fragments_for_ref(&self, r: &Ref) -> Vec<&Fragment> {
+    pub fn fragments_for_ref(&self, r: &Ref) -> Vec<&Fragment<String>> {
         let target = r.sha();
         self.store
             .iter()
@@ -76,7 +76,7 @@ impl Session {
         _annotation: &str,
         obs_ref: &Ref,
         rule: &str,
-        acts: &[Fragment],
+        acts: &[Fragment<String>],
     ) -> Ref {
         let obs_sha = obs_ref.sha();
         let children_sha = children_sha_str(acts);
@@ -97,7 +97,7 @@ impl Session {
         _annotation: &str,
         ref_str: &str,
         data: &str,
-        decisions: &[Fragment],
+        decisions: &[Fragment<String>],
     ) -> Ref {
         let children_sha = children_sha_str(decisions);
         let content = format!("{}{}{}", ref_str, data, children_sha);
@@ -115,8 +115,8 @@ impl Session {
     pub fn commit(
         &mut self,
         annotation: &str,
-        observations: &[Fragment],
-    ) -> (Fragment, Witnessed, String) {
+        observations: &[Fragment<String>],
+    ) -> (Fragment<String>, Witnessed, String) {
         let name = &self.config.name;
         let w = self.witnessed(annotation);
         let children_sha = children_sha_str(observations);
@@ -150,7 +150,7 @@ impl Session {
     }
 }
 
-fn children_sha_str(fragments: &[Fragment]) -> String {
+fn children_sha_str(fragments: &[Fragment<String>]) -> String {
     fragments
         .iter()
         .map(fragment::content_oid)
